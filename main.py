@@ -16,7 +16,7 @@ from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.utils import platform
 
 if platform == "android":
-    from android.permissions import request_permissions, Permission
+    from android.permissions import request_permissions
 
 valid_barcodes = set()
 
@@ -51,8 +51,11 @@ class MainScreen(Screen):
     def check_permissions(self):
         if platform == "android":
             from android.permissions import check_permission
-            permission = Permission.MANAGE_EXTERNAL_STORAGE
-            if check_permission(permission):
+            from jnius import autoclass, cast
+            from android.provider import Settings
+
+            Environment = autoclass('android.os.Environment')
+            if Environment.isExternalStorageManager():
                 self.permission_status_label.text = "Permission Status: Granted"
                 return True
             else:
@@ -62,7 +65,8 @@ class MainScreen(Screen):
     def show_file_chooser(self, instance):
         if platform == "android":
             if not self.check_permissions():
-                self.show_message("Permission Denied", "Storage permission is required to load files.")
+                self.show_message("Permission Denied", "Storage permission is required to load files. Please grant permission in settings.")
+                self.open_settings()
                 return
 
         content = BoxLayout(orientation='vertical')
@@ -212,12 +216,22 @@ class ScannerScreen(Screen):
         self.manager.current = 'main'
 
 
+    def open_settings(self, *args):
+        if platform == "android":
+            from jnius import autoclass
+            from kivy.core.window import Window
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            Intent = autoclass('android.content.Intent')
+            Uri = autoclass('android.net.Uri')
+            settings_intent = Intent(autoclass('android.provider.Settings').ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                                     Uri.parse("package:" + PythonActivity.mActivity.getPackageName()))
+            PythonActivity.mActivity.startActivity(settings_intent)
+
 class BarcodeScannerApp(App):
     def build(self):
         if platform == "android":
             request_permissions([
-                Permission.CAMERA,
-                Permission.MANAGE_EXTERNAL_STORAGE
+                'android.permission.CAMERA'
             ])
         self.sm = ScreenManager()
         self.sm.add_widget(MainScreen())
