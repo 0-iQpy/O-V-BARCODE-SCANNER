@@ -1,19 +1,19 @@
 [app]
 
 # (str) Title of your application
-title = Barcode Scanner
+title = Barcode Scanner by OCTAVYTE
 
 # (str) Package name
 package.name = barcode_scanner
 
 # (str) Package domain (needed for android/ios packaging)
-package.domain = org.test
+package.domain = com.octavyte
 
 # (str) Source code where the main.py live
 source.dir = .
 
 # (str) Main python file to run, default is main.py
-source.main_py = barcode_app.py
+source.main_py = main.py
 
 # (list) Source files to include (let empty to include all the files)
 source.include_exts = py,png,jpg,kv,atlas,txt
@@ -32,7 +32,7 @@ source.include_exts = py,png,jpg,kv,atlas,txt
 #source.exclude_patterns = license,images/*/*.jpg
 
 # (str) Application versioning (method 1)
-version = 0.1
+version = 0.2
 
 # (str) Application versioning (method 2)
 # version.regex = __version__ = ['"](.*)['"]
@@ -98,7 +98,7 @@ fullscreen = 0
 
 # (list) Permissions
 # (See https://python-for-android.readthedocs.io/en/latest/buildoptions/#build-options-1 for all the supported syntaxes and properties)
-android.permissions = android.permission.CAMERA, android.permission.WRITE_EXTERNAL_STORAGE
+android.permissions = android.permission.CAMERA, android.permission.WRITE_EXTERNAL_STORAGE, android.permission.MANAGE_EXTERNAL_STORAGE
 
 # (list) features (adds uses-feature -tags to manifest)
 #android.features = android.hardware.usb.host
