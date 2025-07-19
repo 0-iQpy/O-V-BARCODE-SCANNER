@@ -13,6 +13,10 @@ from kivy.graphics.texture import Texture
 from kivy.uix.filechooser import FileChooserListView
 from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import ScreenManager, Screen
+from kivy.utils import platform
+
+if platform == "android":
+    from android.permissions import request_permissions, Permission
 
 valid_barcodes = set()
 
@@ -31,13 +35,36 @@ class MainScreen(Screen):
         self.import_btn.bind(on_press=self.show_file_chooser)
         layout.add_widget(self.import_btn)
 
+        self.permission_status_label = Label(text="Permission Status: Unknown", size_hint=(1, 0.1))
+        layout.add_widget(self.permission_status_label)
+
         self.exit_btn = Button(text="Exit", size_hint=(1, 0.3))
         self.exit_btn.bind(on_press=self.exit_app)
         layout.add_widget(self.exit_btn)
 
         self.add_widget(layout)
 
+    def on_enter(self, *args):
+        if platform == "android":
+            self.check_permissions()
+
+    def check_permissions(self):
+        if platform == "android":
+            from android.permissions import check_permission
+            permission = Permission.MANAGE_EXTERNAL_STORAGE
+            if check_permission(permission):
+                self.permission_status_label.text = "Permission Status: Granted"
+                return True
+            else:
+                self.permission_status_label.text = "Permission Status: Denied"
+                return False
+
     def show_file_chooser(self, instance):
+        if platform == "android":
+            if not self.check_permissions():
+                self.show_message("Permission Denied", "Storage permission is required to load files.")
+                return
+
         content = BoxLayout(orientation='vertical')
         file_chooser = FileChooserListView(filters=['*.csv', '*.txt'])
         content.add_widget(file_chooser)
@@ -187,6 +214,11 @@ class ScannerScreen(Screen):
 
 class BarcodeScannerApp(App):
     def build(self):
+        if platform == "android":
+            request_permissions([
+                Permission.CAMERA,
+                Permission.MANAGE_EXTERNAL_STORAGE
+            ])
         self.sm = ScreenManager()
         self.sm.add_widget(MainScreen())
         self.sm.add_widget(ScannerScreen())
