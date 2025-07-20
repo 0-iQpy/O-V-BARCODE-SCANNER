@@ -184,13 +184,12 @@ class ScannerScreen(Screen):
             if not success:
                 return
 
+            self.update_texture(img)
             self.status_label.text = "Ready to scan"
             barcodes = decode(img)
 
             if barcodes:
                 self.process_barcodes(img, barcodes)
-
-            self.update_texture(img)
 
     def process_barcodes(self, img, barcodes):
         for barcode in barcodes:
