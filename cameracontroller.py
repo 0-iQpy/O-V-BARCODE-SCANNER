@@ -6,7 +6,7 @@ if platform == 'android':
 else:
     import cv2
 import numpy as np
-from PIL import Image as PilImage
+
 
 class CameraController:
     def __init__(self, resolution=(640, 480), **kwargs):
@@ -49,8 +49,8 @@ class CameraController:
                     texture = self.camera.texture
                     size = texture.size
                     pixels = texture.pixels
-                    pil_image = PilImage.frombytes(mode='RGBA', size=size, data=pixels)
-                    return cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGBA2BGR)
+                    image = np.frombuffer(pixels, dtype='uint8').reshape(size[1], size[0], 4)
+                    return cv2.cvtColor(image, cv2.COLOR_RGBA2BGR)
             else:
                 success, frame = self.camera.read()
                 if success:

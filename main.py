@@ -1,4 +1,3 @@
-from PIL import Image as PilImage
 import cv2
 import numpy as np
 from pyzbar.pyzbar import decode
