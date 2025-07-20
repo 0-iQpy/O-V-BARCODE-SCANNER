@@ -13,8 +13,7 @@ from kivy.graphics.texture import Texture
 from kivy.uix.filechooser import FileChooserListView
 from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import ScreenManager, Screen
-
-from jnius import *
+from jnius import autoclass
 
 
 
@@ -48,7 +47,6 @@ class MainScreen(Screen):
         self.check_permissions()
 
     def check_permissions(self):
-        from jnius import autoclass, cast
         Environment = autoclass('android.os.Environment')
         if Environment.isExternalStorageManager():
             self.permission_status_label.text = "Permission Status: Granted"
@@ -223,8 +221,7 @@ class ScannerScreen(Screen):
 
 
     def open_settings(self, *args):
-        from jnius import autoclass
-        from kivy.core.window import Window
+
         PythonActivity = autoclass('org.kivy.android.PythonActivity')
         Intent = autoclass('android.content.Intent')
         Uri = autoclass('android.net.Uri')
@@ -232,18 +229,15 @@ class ScannerScreen(Screen):
                                  Uri.parse("package:" + PythonActivity.mActivity.getPackageName()))
         PythonActivity.mActivity.startActivity(settings_intent)
 
-
 class BarcodeScannerApp(App):
     def build(self):
-        request_permissions([
-            'android.permission.CAMERA'
-        ])
+        # Request camera permission if necessary
+        # Request necessary permissions (like CAMERA)
+        request_permissions([Permission.CAMERA])
         self.sm = ScreenManager()
         self.sm.add_widget(MainScreen())
         self.sm.add_widget(ScannerScreen())
         return self.sm
-
-
 
 if __name__ == '__main__':
     BarcodeScannerApp().run()
