@@ -14,6 +14,7 @@ from kivy.uix.filechooser import FileChooserListView
 from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.utils import platform
+from jnius import *
 
 if platform == "android":
     from android.permissions import request_permissions
