@@ -14,8 +14,10 @@ from kivy.uix.filechooser import FileChooserListView
 from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import ScreenManager, Screen
 from jnius import autoclass
+from kivy.utils import platform
 
-
+if platform == 'android':
+    from android.permissions import request_permissions, Permission
 
 valid_barcodes = set()
 
@@ -27,14 +29,14 @@ class MainScreen(Screen):
 
         layout = BoxLayout(orientation='vertical', padding=10, spacing=10)
 
-        self.title_label = Label(text="Barcode Scanner by OCTAVYTE", font_size=24, size_hint=(1, 0.2))
+        self.title_label = Label(text="Barcode Scanner", font_size=24, size_hint=(1, 0.2))
         layout.add_widget(self.title_label)
 
         self.import_btn = Button(text="Import CSV/TXT File", size_hint=(1, 0.3))
         self.import_btn.bind(on_press=self.show_file_chooser)
         layout.add_widget(self.import_btn)
 
-        self.permission_status_label = Label(text="Permission Status: Unknown", size_hint=(1, 0.1))
+        self.permission_status_label = Label(text="Import a file to start scanning.", size_hint=(1, 0.1))
         layout.add_widget(self.permission_status_label)
 
         self.exit_btn = Button(text="Exit", size_hint=(1, 0.3))
@@ -43,38 +45,16 @@ class MainScreen(Screen):
 
         self.add_widget(layout)
 
-    def on_enter(self, *args):
-        self.check_permissions()
-
-    def check_permissions(self):
-        Environment = autoclass('android.os.Environment')
-        if Environment.isExternalStorageManager():
-            self.permission_status_label.text = "Permission Status: Granted"
-            return True
-        else:
-            self.permission_status_label.text = "Permission Status: Denied"
-            self.request_storage_permission()
-            return False
-
-    def request_storage_permission(self):
-        from jnius import autoclass
-        PythonActivity = autoclass('org.kivy.android.PythonActivity')
-        Intent = autoclass('android.content.Intent')
-        Uri = autoclass('android.net.Uri')
-        settings_intent = Intent(
-            autoclass('android.provider.Settings').ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-            Uri.parse("package:" + PythonActivity.mActivity.getPackageName())
-        )
-        PythonActivity.mActivity.startActivity(settings_intent)
-
-
     def show_file_chooser(self, instance):
-        if not self.check_permissions():
-            return
-
-
         content = BoxLayout(orientation='vertical')
-        file_chooser = FileChooserListView(filters=['*.csv', '*.txt'])
+
+        if platform == 'android':
+            from android.storage import primary_external_storage_path
+            path = primary_external_storage_path()
+        else:
+            path = os.path.expanduser('~')
+
+        file_chooser = FileChooserListView(path=path, filters=['*.csv', '*.txt'])
         content.add_widget(file_chooser)
 
         btn_layout = BoxLayout(size_hint=(1, 0.1))
@@ -231,9 +211,9 @@ class ScannerScreen(Screen):
 
 class BarcodeScannerApp(App):
     def build(self):
-        # Request camera permission if necessary
-        # Request necessary permissions (like CAMERA)
-        request_permissions([Permission.CAMERA])
+        if platform == 'android':
+            request_permissions([Permission.CAMERA, Permission.READ_EXTERNAL_STORAGE])
+
         self.sm = ScreenManager()
         self.sm.add_widget(MainScreen())
         self.sm.add_widget(ScannerScreen())
