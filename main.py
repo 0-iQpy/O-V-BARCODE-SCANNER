@@ -34,12 +34,12 @@ class MainScreen(Screen):
         self.title_label = Label(text="Barcode Scanner", font_size=24, size_hint=(1, 0.2))
         layout.add_widget(self.title_label)
 
+        self.permission_status_label = Label(text="Import a file to start scanning.", size_hint=(1, 0.1))
+        layout.add_widget(self.permission_status_label)
+
         self.import_btn = Button(text="Import CSV/TXT File", size_hint=(1, 0.3))
         self.import_btn.bind(on_press=self.show_file_chooser)
         layout.add_widget(self.import_btn)
-
-        self.permission_status_label = Label(text="Import a file to start scanning.", size_hint=(1, 0.1))
-        layout.add_widget(self.permission_status_label)
 
         self.exit_btn = Button(text="Exit", size_hint=(1, 0.3))
         self.exit_btn.bind(on_press=self.exit_app)
