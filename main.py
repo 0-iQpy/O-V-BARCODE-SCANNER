@@ -14,6 +14,8 @@ from kivy.graphics.texture import Texture
 from kivy.uix.filechooser import FileChooserListView
 from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import ScreenManager, Screen
+import threading
+from queue import Queue
 from jnius import autoclass
 from kivy.utils import platform
 
@@ -139,6 +141,9 @@ class ScannerScreen(Screen):
         # Camera initialization
         self.camera = None
         self.current_barcode = None
+        self.frame_queue = Queue(maxsize=1)
+        self.processing_thread = None
+        self.stop_processing = threading.Event()
 
     def on_enter(self):
         if platform == 'android':
@@ -148,9 +153,17 @@ class ScannerScreen(Screen):
             self.camera.set(3, 640)
             self.camera.set(4, 480)
         Clock.schedule_interval(self.update_camera, 1.0 / 30.0)
+        self.stop_processing.clear()
+        self.processing_thread = threading.Thread(target=self.process_frames)
+        self.processing_thread.daemon = True
+        self.processing_thread.start()
 
     def on_leave(self):
         # Stop camera when leaving screen
+        self.stop_processing.set()
+        if self.processing_thread:
+            self.processing_thread.join()
+
         if platform == 'android':
             if self.camera:
                 self.camera.stop()
@@ -173,23 +186,31 @@ class ScannerScreen(Screen):
                 pixels = texture.pixels
                 pil_image = PilImage.frombytes(mode='RGBA', size=size, data=pixels)
                 frame = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGBA2BGR)
-
-                self.status_label.text = "Ready to scan"
-                barcodes = decode(frame)
-
-                if barcodes:
-                    self.process_barcodes(frame, barcodes)
+                if not self.frame_queue.full():
+                    self.frame_queue.put(frame)
         else:
             success, img = self.camera.read()
             if not success:
                 return
 
             self.update_texture(img)
-            self.status_label.text = "Ready to scan"
-            barcodes = decode(img)
+            if not self.frame_queue.full():
+                self.frame_queue.put(img)
 
-            if barcodes:
-                self.process_barcodes(img, barcodes)
+    def process_frames(self):
+        while not self.stop_processing.is_set():
+            try:
+                frame = self.frame_queue.get(timeout=0.1)
+                barcodes = decode(frame)
+                if barcodes:
+                    Clock.schedule_once(lambda dt: self.update_ui_from_thread(frame, barcodes))
+            except Empty:
+                continue
+
+    def update_ui_from_thread(self, frame, barcodes):
+        self.process_barcodes(frame, barcodes)
+        if platform != 'android':
+            self.update_texture(frame)
 
     def process_barcodes(self, img, barcodes):
         for barcode in barcodes:
