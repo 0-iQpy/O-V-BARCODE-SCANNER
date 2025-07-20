@@ -1,3 +1,4 @@
+from PIL import Image as PilImage
 import cv2
 import numpy as np
 from pyzbar.pyzbar import decode
@@ -18,6 +19,7 @@ from kivy.utils import platform
 
 if platform == 'android':
     from android.permissions import request_permissions, Permission
+    from kivy.core.camera import Camera as KivyCamera
 
 valid_barcodes = set()
 
@@ -139,34 +141,58 @@ class ScannerScreen(Screen):
         self.current_barcode = None
 
     def on_enter(self):
-        # Start camera when screen is shown
-        self.camera = cv2.VideoCapture(0)
-        self.camera.set(3, 640)
-        self.camera.set(4, 480)
+        if platform == 'android':
+            self.camera = KivyCamera(index=0, resolution=(640, 480), play=True)
+        else:
+            self.camera = cv2.VideoCapture(0)
+            self.camera.set(3, 640)
+            self.camera.set(4, 480)
         Clock.schedule_interval(self.update_camera, 1.0 / 30.0)
 
     def on_leave(self):
         # Stop camera when leaving screen
-        if self.camera:
-            self.camera.release()
-            self.camera = None
+        if platform == 'android':
+            if self.camera:
+                self.camera.stop()
+                self.camera = None
+        else:
+            if self.camera:
+                self.camera.release()
+                self.camera = None
         Clock.unschedule(self.update_camera)
 
     def update_camera(self, dt):
         if not self.camera:
             return
 
-        success, img = self.camera.read()
-        if not success:
-            return
+        if platform == 'android':
+            if self.camera.texture:
+                # The texture is updated automatically, so we just need to process the frame
+                texture = self.camera.texture
+                size = texture.size
+                pixels = texture.pixels
+                pil_image = PilImage.frombytes(mode='RGBA', size=size, data=pixels)
+                frame = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGBA2BGR)
 
-        self.status_label.text = "Ready to scan"
-        barcodes = decode(img)
+                self.status_label.text = "Ready to scan"
+                barcodes = decode(frame)
 
-        if barcodes:
-            self.process_barcodes(img, barcodes)
+                if barcodes:
+                    self.process_barcodes(frame, barcodes)
 
-        self.update_texture(img)
+                self.camera_display.texture = texture
+        else:
+            success, img = self.camera.read()
+            if not success:
+                return
+
+            self.status_label.text = "Ready to scan"
+            barcodes = decode(img)
+
+            if barcodes:
+                self.process_barcodes(img, barcodes)
+
+            self.update_texture(img)
 
     def process_barcodes(self, img, barcodes):
         for barcode in barcodes:
@@ -191,10 +217,11 @@ class ScannerScreen(Screen):
         cv2.putText(img, result_text, text_position, cv2.FONT_HERSHEY_SIMPLEX, 1, color, 3)
 
     def update_texture(self, img):
-        buf = cv2.flip(img, 0).tostring()
-        texture = Texture.create(size=(img.shape[1], img.shape[0]), colorfmt='bgr')
-        texture.blit_buffer(buf, colorfmt='bgr', bufferfmt='ubyte')
-        self.camera_display.texture = texture
+        if platform != 'android':
+            buf = cv2.flip(img, 0).tostring()
+            texture = Texture.create(size=(img.shape[1], img.shape[0]), colorfmt='bgr')
+            texture.blit_buffer(buf, colorfmt='bgr', bufferfmt='ubyte')
+            self.camera_display.texture = texture
 
     def go_back(self, instance):
         self.manager.current = 'main'
