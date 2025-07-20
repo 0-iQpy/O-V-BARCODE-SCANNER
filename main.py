@@ -154,13 +154,132 @@ class ScannerScreen(Screen):
         # Camera initialization
         self.camera = None
         self.current_barcode = None
+        self.image_reader = None
+        self.camera_device = None
+        self.camera_session = None
 
     def on_enter(self):
-        # Start camera when screen is shown
-        self.camera = cv2.VideoCapture(0)
-        self.camera.set(3, 640)
-        self.camera.set(4, 480)
+        if platform == "android":
+            self.init_camera()
+        else:
+            self.camera = cv2.VideoCapture(0)
+            self.camera.set(3, 640)
+            self.camera.set(4, 480)
         Clock.schedule_interval(self.update_camera, 1.0 / 30.0)
+
+    def init_camera(self):
+        PythonActivity = autoclass('org.kivy.android.PythonActivity')
+        Context = autoclass('android.content.Context')
+        CameraManager = autoclass('android.hardware.camera2.CameraManager')
+        ImageFormat = autoclass('android.graphics.ImageFormat')
+        ImageReader = autoclass('android.media.ImageReader')
+        Handler = autoclass('android.os.Handler')
+        Looper = autoclass('android.os.Looper')
+
+        activity = PythonActivity.mActivity
+        camera_manager = activity.getSystemService(Context.CAMERA_SERVICE)
+        camera_id = camera_manager.getCameraIdList()[0]
+
+        self.image_reader = ImageReader.newInstance(640, 480, ImageFormat.YUV_420_888, 2)
+        self.image_reader.setOnImageAvailableListener(self.on_image_available, Handler(Looper.getMainLooper()))
+
+        camera_manager.openCamera(camera_id, self.create_camera_state_callback(), None)
+
+    def on_image_available(self, reader):
+        image = reader.acquireLatestImage()
+        if not image:
+            return
+
+        # Convert YUV to RGB
+        width = image.getWidth()
+        height = image.getHeight()
+        planes = image.getPlanes()
+
+        y_buffer = planes[0].getBuffer()
+        u_buffer = planes[1].getBuffer()
+        v_buffer = planes[2].getBuffer()
+
+        y_size = y_buffer.remaining()
+        u_size = u_buffer.remaining()
+        v_size = v_buffer.remaining()
+
+        y_data = np.frombuffer(y_buffer.toString(), dtype=np.uint8)
+        u_data = np.frombuffer(u_buffer.toString(), dtype=np.uint8)
+        v_data = np.frombuffer(v_buffer.toString(), dtype=np.uint8)
+
+        yuv_image = np.zeros(width * height * 3 // 2, dtype=np.uint8)
+        yuv_image[:y_size] = y_data
+        yuv_image[y_size:y_size + u_size] = u_data
+        yuv_image[y_size + u_size:y_size + u_size + v_size] = v_data
+
+        yuv_image = yuv_image.reshape((height + height // 2, width))
+
+        img = cv2.cvtColor(yuv_image, cv2.COLOR_YUV2BGR_I420)
+
+        self.status_label.text = "Ready to scan"
+        barcodes = decode(img)
+
+        if barcodes:
+            self.process_barcodes(img, barcodes)
+
+        self.update_texture(img)
+        image.close()
+
+    def create_camera_state_callback(self):
+        CameraDevice = autoclass('android.hardware.camera2.CameraDevice')
+
+        class StateCallback(CameraDevice.StateCallback):
+            def __init__(self, owner):
+                super().__init__()
+                self.owner = owner
+
+            def onOpened(self, camera):
+                self.owner.camera_device = camera
+                self.owner.create_camera_preview_session()
+
+            def onDisconnected(self, camera):
+                camera.close()
+                self.owner.camera_device = None
+
+            def onError(self, camera, error):
+                camera.close()
+                self.owner.camera_device = None
+
+        return StateCallback(self)
+
+    def create_camera_preview_session(self):
+        CaptureRequest = autoclass('android.hardware.camera2.CaptureRequest')
+        CameraCaptureSession = autoclass('android.hardware.camera2.CameraCaptureSession')
+        ArrayList = autoclass('java.util.ArrayList')
+
+        surfaces = ArrayList()
+        surfaces.add(self.image_reader.getSurface())
+
+        self.camera_device.createCaptureSession(surfaces, self.create_capture_session_callback(), None)
+
+    def create_capture_session_callback(self):
+        CameraCaptureSession = autoclass('android.hardware.camera2.CameraCaptureSession')
+        CaptureRequest = autoclass('android.hardware.camera2.CaptureRequest')
+
+        class SessionStateCallback(CameraCaptureSession.StateCallback):
+            def __init__(self, owner):
+                super().__init__()
+                self.owner = owner
+
+            def onConfigured(self, session):
+                self.owner.camera_session = session
+                self.owner.start_preview()
+
+            def onConfigureFailed(self, session):
+                pass
+
+        return SessionStateCallback(self)
+
+    def start_preview(self):
+        CaptureRequest = autoclass('android.hardware.camera2.CaptureRequest')
+        builder = self.camera_device.createCaptureRequest(self.camera_device.TEMPLATE_PREVIEW)
+        builder.addTarget(self.image_reader.getSurface())
+        self.camera_session.setRepeatingRequest(builder.build(), None, None)
 
     def on_leave(self):
         # Stop camera when leaving screen
@@ -170,20 +289,24 @@ class ScannerScreen(Screen):
         Clock.unschedule(self.update_camera)
 
     def update_camera(self, dt):
-        if not self.camera:
-            return
+        if platform == "android":
+            # The image processing is now triggered by on_image_available
+            pass
+        else:
+            if not self.camera:
+                return
 
-        success, img = self.camera.read()
-        if not success:
-            return
+            success, img = self.camera.read()
+            if not success:
+                return
 
-        self.status_label.text = "Ready to scan"
-        barcodes = decode(img)
+            self.status_label.text = "Ready to scan"
+            barcodes = decode(img)
 
-        if barcodes:
-            self.process_barcodes(img, barcodes)
+            if barcodes:
+                self.process_barcodes(img, barcodes)
 
-        self.update_texture(img)
+            self.update_texture(img)
 
     def process_barcodes(self, img, barcodes):
         for barcode in barcodes:
@@ -194,13 +317,20 @@ class ScannerScreen(Screen):
 
     def draw_barcode_feedback(self, img, barcode, is_valid):
         result_text = "Valid" if is_valid else "Invalid"
-        color = (0, 255, 0) if is_valid else (0, 0, 255)
+        if is_valid:
+            color = (0, 255, 0)  # Green
+        else:
+            color = (0, 0, 255)  # Red
 
         self.status_label.text = f"Validation: {result_text} ({self.current_barcode})"
 
         # Draw bounding box
         pts = np.array([barcode.polygon], np.int32).reshape((-1, 1, 2))
         cv2.polylines(img, [pts], True, color, 5)
+
+        # Add a purple border for invalid barcodes
+        if not is_valid:
+            cv2.polylines(img, [pts], True, (128, 0, 128), 10)
 
         # Add validation text
         pts2 = barcode.rect
