@@ -51,23 +51,31 @@ class MainScreen(Screen):
 
     def check_permissions(self):
         if platform == "android":
-            from android.permissions import check_permission
             from jnius import autoclass, cast
-            from android.provider import Settings
-
             Environment = autoclass('android.os.Environment')
             if Environment.isExternalStorageManager():
                 self.permission_status_label.text = "Permission Status: Granted"
                 return True
             else:
                 self.permission_status_label.text = "Permission Status: Denied"
+                self.request_storage_permission()
                 return False
+
+    def request_storage_permission(self):
+        if platform == "android":
+            from jnius import autoclass
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            Intent = autoclass('android.content.Intent')
+            Uri = autoclass('android.net.Uri')
+            settings_intent = Intent(
+                autoclass('android.provider.Settings').ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                Uri.parse("package:" + PythonActivity.mActivity.getPackageName())
+            )
+            PythonActivity.mActivity.startActivity(settings_intent)
 
     def show_file_chooser(self, instance):
         if platform == "android":
             if not self.check_permissions():
-                self.show_message("Permission Denied", "Storage permission is required to load files. Please grant permission in settings.")
-                self.open_settings()
                 return
 
         content = BoxLayout(orientation='vertical')
