@@ -52,11 +52,8 @@ class MainScreen(Screen):
     def check_permissions(self):
         if platform == "android":
             from android.permissions import check_permission
-            from jnius import autoclass, cast
-            from android.provider import Settings
-
-            Environment = autoclass('android.os.Environment')
-            if Environment.isExternalStorageManager():
+            permission = "android.permission.WRITE_EXTERNAL_STORAGE"
+            if check_permission(permission):
                 self.permission_status_label.text = "Permission Status: Granted"
                 return True
             else:
@@ -358,13 +355,16 @@ class ScannerScreen(Screen):
     def open_settings(self, *args):
         if platform == "android":
             from jnius import autoclass
-            from kivy.core.window import Window
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
             Intent = autoclass('android.content.Intent')
+            Settings = autoclass('android.provider.Settings')
             Uri = autoclass('android.net.Uri')
-            settings_intent = Intent(autoclass('android.provider.Settings').ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                                     Uri.parse("package:" + PythonActivity.mActivity.getPackageName()))
-            PythonActivity.mActivity.startActivity(settings_intent)
+
+            app_package_name = PythonActivity.mActivity.getPackageName()
+            intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+            uri = Uri.fromParts("package", app_package_name, None)
+            intent.setData(uri)
+            PythonActivity.mActivity.startActivity(intent)
 
     def show_message(self, title, message):
         content = Label(text=message)
