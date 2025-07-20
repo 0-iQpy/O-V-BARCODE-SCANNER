@@ -51,9 +51,9 @@ class MainScreen(Screen):
 
     def check_permissions(self):
         if platform == "android":
-            from android.permissions import check_permission
-            permission = "android.permission.WRITE_EXTERNAL_STORAGE"
-            if check_permission(permission):
+            from jnius import autoclass
+            Environment = autoclass('android.os.Environment')
+            if Environment.isExternalStorageManager():
                 self.permission_status_label.text = "Permission Status: Granted"
                 return True
             else:
