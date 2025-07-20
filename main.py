@@ -64,7 +64,6 @@ class MainScreen(Screen):
         if platform == "android":
             if not self.check_permissions():
                 self.show_message("Permission Denied", "Storage permission is required to load files. Please grant permission in settings.")
-                self.open_settings()
                 return
 
         content = BoxLayout(orientation='vertical')
@@ -351,32 +350,17 @@ class ScannerScreen(Screen):
     def go_back(self, instance):
         self.manager.current = 'main'
 
-
-    def open_settings(self, *args):
-        if platform == "android":
-            from jnius import autoclass
-            PythonActivity = autoclass('org.kivy.android.PythonActivity')
-            Intent = autoclass('android.content.Intent')
-            Uri = autoclass('android.net.Uri')
-
-            app_package_name = PythonActivity.mActivity.getPackageName()
-            intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
-            uri = Uri.fromParts("package", app_package_name, None)
-            intent.setData(uri)
-            PythonActivity.mActivity.startActivity(intent)
-
     def show_message(self, title, message):
         content = Label(text=message)
         popup = Popup(title=title, content=content, size_hint=(0.8, 0.4))
         popup.open()
-
 
 class BarcodeScannerApp(App):
     def build(self):
         if platform == "android":
             request_permissions([
                 'android.permission.CAMERA',
-                'android.permission.WRITE_EXTERNAL_STORAGE'
+                'android.permission.MANAGE_EXTERNAL_STORAGE'
             ])
         self.sm = ScreenManager()
         self.sm.add_widget(MainScreen())
