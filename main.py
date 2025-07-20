@@ -16,12 +16,10 @@ from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import ScreenManager, Screen
 import threading
 from queue import Queue
-from jnius import autoclass
+from cameracontroller import CameraController
+# from jnius import autoclass
 from kivy.utils import platform
-
-if platform == 'android':
-    from android.permissions import request_permissions, Permission
-    from kivy.core.camera import Camera as KivyCamera
+# from android.permissions import request_permissions, Permission
 
 valid_barcodes = set()
 
@@ -139,19 +137,14 @@ class ScannerScreen(Screen):
         self.add_widget(self.layout)
 
         # Camera initialization
-        self.camera = None
+        self.camera_controller = CameraController(resolution=(640, 480))
         self.current_barcode = None
         self.frame_queue = Queue(maxsize=1)
         self.processing_thread = None
         self.stop_processing = threading.Event()
 
     def on_enter(self):
-        if platform == 'android':
-            self.camera = KivyCamera(index=0, resolution=(640, 480), play=True)
-        else:
-            self.camera = cv2.VideoCapture(0)
-            self.camera.set(3, 640)
-            self.camera.set(4, 480)
+        self.camera_controller.start()
         Clock.schedule_interval(self.update_camera, 1.0 / 30.0)
         self.stop_processing.clear()
         self.processing_thread = threading.Thread(target=self.process_frames)
@@ -164,38 +157,15 @@ class ScannerScreen(Screen):
         if self.processing_thread:
             self.processing_thread.join()
 
-        if platform == 'android':
-            if self.camera:
-                self.camera.stop()
-                self.camera = None
-        else:
-            if self.camera:
-                self.camera.release()
-                self.camera = None
+        self.camera_controller.stop()
         Clock.unschedule(self.update_camera)
 
     def update_camera(self, dt):
-        if not self.camera:
-            return
-
-        if platform == 'android':
-            if self.camera.texture:
-                self.camera_display.texture = self.camera.texture
-                texture = self.camera.texture
-                size = texture.size
-                pixels = texture.pixels
-                pil_image = PilImage.frombytes(mode='RGBA', size=size, data=pixels)
-                frame = cv2.cvtColor(np.array(pil_image), cv2.COLOR_RGBA2BGR)
-                if not self.frame_queue.full():
-                    self.frame_queue.put(frame)
-        else:
-            success, img = self.camera.read()
-            if not success:
-                return
-
-            self.update_texture(img)
+        frame = self.camera_controller.get_frame()
+        if frame is not None:
+            self.camera_display.texture = self.camera_controller.get_texture()
             if not self.frame_queue.full():
-                self.frame_queue.put(img)
+                self.frame_queue.put(frame)
 
     def process_frames(self):
         while not self.stop_processing.is_set():
@@ -203,14 +173,9 @@ class ScannerScreen(Screen):
                 frame = self.frame_queue.get(timeout=0.1)
                 barcodes = decode(frame)
                 if barcodes:
-                    Clock.schedule_once(lambda dt: self.update_ui_from_thread(frame, barcodes))
+                    Clock.schedule_once(lambda dt: self.process_barcodes(frame, barcodes))
             except Empty:
                 continue
-
-    def update_ui_from_thread(self, frame, barcodes):
-        self.process_barcodes(frame, barcodes)
-        if platform != 'android':
-            self.update_texture(frame)
 
     def process_barcodes(self, img, barcodes):
         for barcode in barcodes:
@@ -227,7 +192,8 @@ class ScannerScreen(Screen):
 
         # Draw bounding box
         pts = np.array([barcode.polygon], np.int32).reshape((-1, 1, 2))
-        cv2.polylines(img, [pts], True, color, 5)
+        cv2.polylines(img, [pts], True, (128, 0, 128), 5) # Purple for bounding box
+        cv2.polylines(img, [pts], True, color, 2) # Green/Red for validation
 
         # Add validation text
         pts2 = barcode.rect
@@ -235,29 +201,28 @@ class ScannerScreen(Screen):
         cv2.putText(img, result_text, text_position, cv2.FONT_HERSHEY_SIMPLEX, 1, color, 3)
 
     def update_texture(self, img):
-        if platform != 'android':
-            buf = cv2.flip(img, 0).tostring()
-            texture = Texture.create(size=(img.shape[1], img.shape[0]), colorfmt='bgr')
-            texture.blit_buffer(buf, colorfmt='bgr', bufferfmt='ubyte')
-            self.camera_display.texture = texture
+        buf = cv2.flip(img, 0).tostring()
+        texture = Texture.create(size=(img.shape[1], img.shape[0]), colorfmt='bgr')
+        texture.blit_buffer(buf, colorfmt='bgr', bufferfmt='ubyte')
+        self.camera_display.texture = texture
 
     def go_back(self, instance):
         self.manager.current = 'main'
 
 
     def open_settings(self, *args):
-
-        PythonActivity = autoclass('org.kivy.android.PythonActivity')
-        Intent = autoclass('android.content.Intent')
-        Uri = autoclass('android.net.Uri')
-        settings_intent = Intent(autoclass('android.provider.Settings').ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                                 Uri.parse("package:" + PythonActivity.mActivity.getPackageName()))
-        PythonActivity.mActivity.startActivity(settings_intent)
+        pass
+        # PythonActivity = autoclass('org.kivy.android.PythonActivity')
+        # Intent = autoclass('android.content.Intent')
+        # Uri = autoclass('android.net.Uri')
+        # settings_intent = Intent(autoclass('android.provider.Settings').ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+        #                          Uri.parse("package:" + PythonActivity.mActivity.getPackageName()))
+        # PythonActivity.mActivity.startActivity(settings_intent)
 
 class BarcodeScannerApp(App):
     def build(self):
-        if platform == 'android':
-            request_permissions([Permission.CAMERA, Permission.READ_EXTERNAL_STORAGE])
+        # if platform == 'android':
+            # request_permissions([Permission.CAMERA, Permission.READ_EXTERNAL_STORAGE])
 
         self.sm = ScreenManager()
         self.sm.add_widget(MainScreen())
