@@ -168,62 +168,66 @@ class ScannerScreen(Screen):
         Clock.schedule_interval(self.update_camera, 1.0 / 30.0)
 
     def init_camera(self):
-        PythonActivity = autoclass('org.kivy.android.PythonActivity')
-        Context = autoclass('android.content.Context')
-        CameraManager = autoclass('android.hardware.camera2.CameraManager')
-        ImageFormat = autoclass('android.graphics.ImageFormat')
-        ImageReader = autoclass('android.media.ImageReader')
-        Handler = autoclass('android.os.Handler')
-        Looper = autoclass('android.os.Looper')
+        try:
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            Context = autoclass('android.content.Context')
+            CameraManager = autoclass('android.hardware.camera2.CameraManager')
+            ImageFormat = autoclass('android.graphics.ImageFormat')
+            ImageReader = autoclass('android.media.ImageReader')
+            Handler = autoclass('android.os.Handler')
+            Looper = autoclass('android.os.Looper')
 
-        activity = PythonActivity.mActivity
-        camera_manager = activity.getSystemService(Context.CAMERA_SERVICE)
-        camera_id = camera_manager.getCameraIdList()[0]
+            activity = PythonActivity.mActivity
+            camera_manager = activity.getSystemService(Context.CAMERA_SERVICE)
+            camera_id = camera_manager.getCameraIdList()[0]
 
-        self.image_reader = ImageReader.newInstance(640, 480, ImageFormat.YUV_420_888, 2)
-        self.image_reader.setOnImageAvailableListener(self.on_image_available, Handler(Looper.getMainLooper()))
+            self.image_reader = ImageReader.newInstance(640, 480, ImageFormat.YUV_420_888, 2)
+            self.image_reader.setOnImageAvailableListener(self.on_image_available, Handler(Looper.getMainLooper()))
 
-        camera_manager.openCamera(camera_id, self.create_camera_state_callback(), None)
+            camera_manager.openCamera(camera_id, self.create_camera_state_callback(), None)
+        except Exception as e:
+            self.show_message("Error", f"Failed to initialize camera: {str(e)}")
+            self.go_back(None)
 
     def on_image_available(self, reader):
-        image = reader.acquireLatestImage()
-        if not image:
-            return
+        try:
+            image = reader.acquireLatestImage()
+            if not image:
+                return
 
-        # Convert YUV to RGB
-        width = image.getWidth()
-        height = image.getHeight()
-        planes = image.getPlanes()
+            width = image.getWidth()
+            height = image.getHeight()
+            planes = image.getPlanes()
 
-        y_buffer = planes[0].getBuffer()
-        u_buffer = planes[1].getBuffer()
-        v_buffer = planes[2].getBuffer()
+            y_buffer = planes[0].getBuffer()
+            u_buffer = planes[1].getBuffer()
+            v_buffer = planes[2].getBuffer()
 
-        y_size = y_buffer.remaining()
-        u_size = u_buffer.remaining()
-        v_size = v_buffer.remaining()
+            # Create numpy arrays from the buffers
+            y_array = np.array(y_buffer.array(), dtype=np.uint8)
+            u_array = np.array(u_buffer.array(), dtype=np.uint8)
+            v_array = np.array(v_buffer.array(), dtype=np.uint8)
 
-        y_data = np.frombuffer(y_buffer.toString(), dtype=np.uint8)
-        u_data = np.frombuffer(u_buffer.toString(), dtype=np.uint8)
-        v_data = np.frombuffer(v_buffer.toString(), dtype=np.uint8)
+            # Create the YUV image
+            yuv_image = np.zeros(width * height * 3 // 2, dtype=np.uint8)
+            yuv_image[:width * height] = y_array
+            yuv_image[width * height:width * height + width * height // 4] = u_array
+            yuv_image[width * height + width * height // 4:] = v_array
+            yuv_image = yuv_image.reshape((height * 3 // 2, width))
 
-        yuv_image = np.zeros(width * height * 3 // 2, dtype=np.uint8)
-        yuv_image[:y_size] = y_data
-        yuv_image[y_size:y_size + u_size] = u_data
-        yuv_image[y_size + u_size:y_size + u_size + v_size] = v_data
+            # Convert to BGR
+            img = cv2.cvtColor(yuv_image, cv2.COLOR_YUV2BGR_I420)
 
-        yuv_image = yuv_image.reshape((height + height // 2, width))
+            self.status_label.text = "Ready to scan"
+            barcodes = decode(img)
 
-        img = cv2.cvtColor(yuv_image, cv2.COLOR_YUV2BGR_I420)
+            if barcodes:
+                self.process_barcodes(img, barcodes)
 
-        self.status_label.text = "Ready to scan"
-        barcodes = decode(img)
-
-        if barcodes:
-            self.process_barcodes(img, barcodes)
-
-        self.update_texture(img)
-        image.close()
+            self.update_texture(img)
+            image.close()
+        except Exception as e:
+            self.show_message("Error", f"Failed to process image: {str(e)}")
 
     def create_camera_state_callback(self):
         CameraDevice = autoclass('android.hardware.camera2.CameraDevice')
@@ -248,14 +252,18 @@ class ScannerScreen(Screen):
         return StateCallback(self)
 
     def create_camera_preview_session(self):
-        CaptureRequest = autoclass('android.hardware.camera2.CaptureRequest')
-        CameraCaptureSession = autoclass('android.hardware.camera2.CameraCaptureSession')
-        ArrayList = autoclass('java.util.ArrayList')
+        try:
+            CaptureRequest = autoclass('android.hardware.camera2.CaptureRequest')
+            CameraCaptureSession = autoclass('android.hardware.camera2.CameraCaptureSession')
+            ArrayList = autoclass('java.util.ArrayList')
 
-        surfaces = ArrayList()
-        surfaces.add(self.image_reader.getSurface())
+            surfaces = ArrayList()
+            surfaces.add(self.image_reader.getSurface())
 
-        self.camera_device.createCaptureSession(surfaces, self.create_capture_session_callback(), None)
+            self.camera_device.createCaptureSession(surfaces, self.create_capture_session_callback(), None)
+        except Exception as e:
+            self.show_message("Error", f"Failed to create camera preview session: {str(e)}")
+            self.go_back(None)
 
     def create_capture_session_callback(self):
         CameraCaptureSession = autoclass('android.hardware.camera2.CameraCaptureSession')
@@ -358,11 +366,18 @@ class ScannerScreen(Screen):
                                      Uri.parse("package:" + PythonActivity.mActivity.getPackageName()))
             PythonActivity.mActivity.startActivity(settings_intent)
 
+    def show_message(self, title, message):
+        content = Label(text=message)
+        popup = Popup(title=title, content=content, size_hint=(0.8, 0.4))
+        popup.open()
+
+
 class BarcodeScannerApp(App):
     def build(self):
         if platform == "android":
             request_permissions([
-                'android.permission.CAMERA'
+                'android.permission.CAMERA',
+                'android.permission.WRITE_EXTERNAL_STORAGE'
             ])
         self.sm = ScreenManager()
         self.sm.add_widget(MainScreen())
