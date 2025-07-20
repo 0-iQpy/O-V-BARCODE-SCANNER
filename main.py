@@ -167,7 +167,7 @@ class ScannerScreen(Screen):
 
         if platform == 'android':
             if self.camera.texture:
-                # The texture is updated automatically, so we just need to process the frame
+                self.camera_display.texture = self.camera.texture
                 texture = self.camera.texture
                 size = texture.size
                 pixels = texture.pixels
@@ -179,8 +179,6 @@ class ScannerScreen(Screen):
 
                 if barcodes:
                     self.process_barcodes(frame, barcodes)
-
-                self.camera_display.texture = texture
         else:
             success, img = self.camera.read()
             if not success:
