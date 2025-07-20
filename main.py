@@ -357,7 +357,6 @@ class ScannerScreen(Screen):
             from jnius import autoclass
             PythonActivity = autoclass('org.kivy.android.PythonActivity')
             Intent = autoclass('android.content.Intent')
-            Settings = autoclass('android.provider.Settings')
             Uri = autoclass('android.net.Uri')
 
             app_package_name = PythonActivity.mActivity.getPackageName()
