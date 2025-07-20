@@ -14,12 +14,170 @@ from kivy.uix.filechooser import FileChooserListView
 from kivy.uix.popup import Popup
 from kivy.uix.screenmanager import ScreenManager, Screen
 from kivy.utils import platform
-from jnius import autoclass
+from jnius import autoclass, PythonJavaClass, java_method
 
 if platform == "android":
-    from android.permissions import request_permissions
+    from android.permissions import request_permissions, Permission
+    from android.runnable import run_on_ui_thread
+
+    # Android API classes
+    Camera = autoclass('android.hardware.Camera')
+    SurfaceTexture = autoclass('android.graphics.SurfaceTexture')
+    PythonActivity = autoclass('org.kivy.android.PythonActivity')
+    Context = autoclass('android.content.Context')
+    CameraManager = autoclass('android.hardware.camera2.CameraManager')
+    ImageFormat = autoclass('android.graphics.ImageFormat')
+    ImageReader = autoclass('android.media.ImageReader')
+    Handler = autoclass('android.os.Handler')
+    Looper = autoclass('android.os.Looper')
+    CaptureRequest = autoclass('android.hardware.camera2.CaptureRequest')
+    CameraDevice = autoclass('android.hardware.camera2.CameraDevice')
 
 valid_barcodes = set()
+
+
+class Camera2:
+    def __init__(self, scanner_screen, **kwargs):
+        super().__init__(**kwargs)
+        self.scanner_screen = scanner_screen
+        self.camera_id = None
+        self.camera_device = None
+        self.capture_session = None
+        self.image_reader = None
+        self.texture_id = -1
+        self.preview_builder = None
+        self.handler = Handler(Looper.getMainLooper())
+
+    def start(self):
+        self.setup_camera(self.scanner_screen)
+
+    def stop(self):
+        if self.capture_session:
+            self.capture_session.close()
+            self.capture_session = None
+        if self.camera_device:
+            self.camera_device.close()
+            self.camera_device = None
+        if self.image_reader:
+            self.image_reader.close()
+            self.image_reader = None
+
+    @run_on_ui_thread
+    def setup_camera(self, scanner_screen):
+        camera_manager = PythonActivity.mActivity.getSystemService(Context.CAMERA_SERVICE)
+        self.camera_id = camera_manager.getCameraIdList()[0]
+
+        self.image_reader = ImageReader.newInstance(640, 480, ImageFormat.YUV_420_888, 2)
+        self.image_reader.setOnImageAvailableListener(ImageListener(scanner_screen), self.handler)
+
+        state_callback = CameraStateCallback(self)
+        camera_manager.openCamera(self.camera_id, state_callback, self.handler)
+
+    def on_camera_opened(self, camera_device):
+        self.camera_device = camera_device
+        self.create_capture_session()
+
+    def on_camera_disconnected(self, camera_device):
+        self.stop()
+
+    def on_camera_error(self, camera_device, error):
+        self.stop()
+
+    def create_capture_session(self):
+        surfaces = [self.image_reader.getSurface()]
+        session_callback = SessionStateCallback(self)
+        self.camera_device.createCaptureSession(surfaces, session_callback, self.handler)
+
+    def on_session_configured(self, session):
+        self.capture_session = session
+        self.create_preview_request()
+
+    def on_session_failed(self, session):
+        self.stop()
+
+    def create_preview_request(self):
+        self.preview_builder = self.camera_device.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW)
+        self.preview_builder.addTarget(self.image_reader.getSurface())
+        self.capture_session.setRepeatingRequest(self.preview_builder.build(), None, self.handler)
+
+
+class ImageListener(PythonJavaClass):
+    __javainterfaces__ = ['android/media/ImageReader$OnImageAvailableListener']
+    __javacontext__ = 'app'
+
+    def __init__(self, scanner_screen, **kwargs):
+        super().__init__(**kwargs)
+        self.scanner_screen = scanner_screen
+
+    @java_method('(Landroid/media/ImageReader;)V')
+    def onImageAvailable(self, reader):
+        image = reader.acquireLatestImage()
+        if not image:
+            return
+
+        # Convert YUV_420_888 to NV21
+        width = image.getWidth()
+        height = image.getHeight()
+        y_plane = image.getPlanes()[0]
+        u_plane = image.getPlanes()[1]
+        v_plane = image.getPlanes()[2]
+
+        y_buffer = y_plane.getBuffer()
+        u_buffer = u_plane.getBuffer()
+        v_buffer = v_plane.getBuffer()
+
+        y_size = y_buffer.remaining()
+        u_size = u_buffer.remaining()
+        v_size = v_buffer.remaining()
+
+        nv21 = np.zeros(y_size + u_size + v_size, dtype=np.uint8)
+        y_buffer.get(nv21, 0, y_size)
+        v_buffer.get(nv21, y_size, v_size)
+        u_buffer.get(nv21, y_size + v_size, u_size)
+
+        # Convert NV21 to BGR
+        bgr_image = cv2.cvtColor(nv21.reshape(int(height * 1.5), width), cv2.COLOR_YUV2BGR_NV21)
+
+        self.scanner_screen.process_frame(bgr_image)
+        image.close()
+
+
+class CameraStateCallback(PythonJavaClass):
+    __javainterfaces__ = ['android/hardware/camera2/CameraDevice$StateCallback']
+    __javacontext__ = 'app'
+
+    def __init__(self, camera2, **kwargs):
+        super().__init__(**kwargs)
+        self.camera2 = camera2
+
+    @java_method('(Landroid/hardware/camera2/CameraDevice;)V')
+    def onOpened(self, camera_device):
+        self.camera2.on_camera_opened(camera_device)
+
+    @java_method('(Landroid/hardware/camera2/CameraDevice;)V')
+    def onDisconnected(self, camera_device):
+        self.camera2.on_camera_disconnected(camera_device)
+
+    @java_method('(Landroid/hardware/camera2/CameraDevice;I)V')
+    def onError(self, camera_device, error):
+        self.camera2.on_camera_error(camera_device, error)
+
+
+class SessionStateCallback(PythonJavaClass):
+    __javainterfaces__ = ['android/hardware/camera2/CameraCaptureSession$StateCallback']
+    __javacontext__ = 'app'
+
+    def __init__(self, camera2, **kwargs):
+        super().__init__(**kwargs)
+        self.camera2 = camera2
+
+    @java_method('(Landroid/hardware/camera2/CameraCaptureSession;)V')
+    def onConfigured(self, session):
+        self.camera2.on_session_configured(session)
+
+    @java_method('(Landroid/hardware/camera2/CameraCaptureSession;)V')
+    def onConfigureFailed(self, session):
+        self.camera2.on_session_failed(session)
 
 
 class MainScreen(Screen):
@@ -152,31 +310,40 @@ class ScannerScreen(Screen):
         self.add_widget(self.layout)
 
         # Camera initialization
-        self.camera = None
+        self.camera2 = None
         self.current_barcode = None
 
     def on_enter(self):
         # Start camera when screen is shown
-        self.camera = cv2.VideoCapture(0)
-        self.camera.set(3, 640)
-        self.camera.set(4, 480)
-        Clock.schedule_interval(self.update_camera, 1.0 / 30.0)
+        if platform == "android":
+            self.camera2 = Camera2(self)
+            self.camera2.start()
+            # The camera frames will be processed in the ImageListener
+        else:
+            self.camera = cv2.VideoCapture(0)
+            self.camera.set(3, 640)
+            self.camera.set(4, 480)
+            Clock.schedule_interval(self.update_camera, 1.0 / 30.0)
 
     def on_leave(self):
         # Stop camera when leaving screen
-        if self.camera:
+        if self.camera2:
+            self.camera2.stop()
+            self.camera2 = None
+        if getattr(self, 'camera', None):
             self.camera.release()
             self.camera = None
         Clock.unschedule(self.update_camera)
 
     def update_camera(self, dt):
-        if not self.camera:
-            return
+        if hasattr(self, 'camera') and self.camera:
+            success, img = self.camera.read()
+            if not success:
+                return
 
-        success, img = self.camera.read()
-        if not success:
-            return
+            self.process_frame(img)
 
+    def process_frame(self, img):
         self.status_label.text = "Ready to scan"
         barcodes = decode(img)
 
@@ -184,6 +351,7 @@ class ScannerScreen(Screen):
             self.process_barcodes(img, barcodes)
 
         self.update_texture(img)
+
 
     def process_barcodes(self, img, barcodes):
         for barcode in barcodes:
@@ -208,7 +376,7 @@ class ScannerScreen(Screen):
         cv2.putText(img, result_text, text_position, cv2.FONT_HERSHEY_SIMPLEX, 1, color, 3)
 
     def update_texture(self, img):
-        buf = cv2.flip(img, 0).tostring()
+        buf = cv2.flip(img, 0).tobytes()
         texture = Texture.create(size=(img.shape[1], img.shape[0]), colorfmt='bgr')
         texture.blit_buffer(buf, colorfmt='bgr', bufferfmt='ubyte')
         self.camera_display.texture = texture
@@ -232,7 +400,7 @@ class BarcodeScannerApp(App):
     def build(self):
         if platform == "android":
             request_permissions([
-                'android.permission.CAMERA'
+                Permission.CAMERA
             ])
         self.sm = ScreenManager()
         self.sm.add_widget(MainScreen())

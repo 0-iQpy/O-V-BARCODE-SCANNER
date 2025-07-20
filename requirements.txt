@@ -1,4 +1,4 @@
-﻿certifi==2025.7.14
+certifi==2025.7.14
 charset-normalizer==3.4.2
 docutils==0.21.2
 filetype==1.2.0
@@ -16,3 +16,4 @@ pywin32==311
 pyzbar==0.1.9
 requests==2.32.4
 urllib3==2.5.0
+jnius
