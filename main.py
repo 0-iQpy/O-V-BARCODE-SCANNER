@@ -162,9 +162,14 @@ class ScannerScreen(Screen):
     def update_camera(self, dt):
         frame = self.camera_controller.get_frame()
         if frame is not None:
-            self.camera_display.texture = self.camera_controller.get_texture()
             if not self.frame_queue.full():
                 self.frame_queue.put(frame)
+
+            # Display the frame with barcode feedback if available
+            if hasattr(self, 'processed_frame'):
+                self.update_texture(self.processed_frame)
+            else:
+                self.update_texture(frame)
 
     def process_frames(self):
         while not self.stop_processing.is_set():
@@ -180,14 +185,14 @@ class ScannerScreen(Screen):
         for barcode in barcodes:
             self.current_barcode = barcode.data.decode("utf-8")
             is_valid = self.current_barcode in valid_barcodes
-
+            result_text = "Valid" if is_valid else "Invalid"
+            self.status_label.text = f"Validation: {result_text} ({self.current_barcode})"
             self.draw_barcode_feedback(img, barcode, is_valid)
+            self.processed_frame = img
 
     def draw_barcode_feedback(self, img, barcode, is_valid):
         result_text = "Valid" if is_valid else "Invalid"
         color = (0, 255, 0) if is_valid else (0, 0, 255)
-
-        self.status_label.text = f"Validation: {result_text} ({self.current_barcode})"
 
         # Draw bounding box
         pts = np.array([barcode.polygon], np.int32).reshape((-1, 1, 2))
@@ -200,7 +205,7 @@ class ScannerScreen(Screen):
         cv2.putText(img, result_text, text_position, cv2.FONT_HERSHEY_SIMPLEX, 1, color, 3)
 
     def update_texture(self, img):
-        buf = cv2.flip(img, 0).tostring()
+        buf = cv2.flip(img, 0).tobytes()
         texture = Texture.create(size=(img.shape[1], img.shape[0]), colorfmt='bgr')
         texture.blit_buffer(buf, colorfmt='bgr', bufferfmt='ubyte')
         self.camera_display.texture = texture
