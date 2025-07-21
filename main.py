@@ -68,7 +68,10 @@ class MainScreen(Screen):
                 return
 
         content = BoxLayout(orientation='vertical')
-        file_chooser = FileChooserListView(filters=['*.csv', '*.txt'])
+        from jnius import autoclass
+        Environment = autoclass('android.os.Environment')
+        default_path = Environment.getExternalStorageDirectory().getPath()
+        file_chooser = FileChooserListView(path=default_path, filters=['*.csv', '*.txt'])
         content.add_widget(file_chooser)
 
         btn_layout = BoxLayout(size_hint=(1, 0.1))
