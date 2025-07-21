@@ -130,8 +130,9 @@ class MainScreen(Screen):
             Uri = autoclass('android.net.Uri')
 
             app_package_name = PythonActivity.mActivity.getPackageName()
-            intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
-                            Uri.parse("package:" + app_package_name))
+            intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS)
+            uri = Uri.fromParts("package", app_package_name, None)
+            intent.setData(uri)
             PythonActivity.mActivity.startActivity(intent)
 
     def exit_app(self, instance):
@@ -189,7 +190,6 @@ class ScannerScreen(Screen):
             ImageReader = autoclass('android.media.ImageReader')
             Handler = autoclass('android.os.Handler')
             Looper = autoclass('android.os.Looper')
-            CameraDevice = autoclass('android.hardware.camera2.CameraDevice')
 
             activity = PythonActivity.mActivity
             camera_manager = activity.getSystemService(Context.CAMERA_SERVICE)
@@ -197,23 +197,6 @@ class ScannerScreen(Screen):
 
             self.image_reader = ImageReader.newInstance(640, 480, ImageFormat.YUV_420_888, 2)
             self.image_reader.setOnImageAvailableListener(self.on_image_available, Handler(Looper.getMainLooper()))
-
-            class StateCallback(CameraDevice.StateCallback):
-                def __init__(self, owner):
-                    super().__init__()
-                    self.owner = owner
-
-                def onOpened(self, camera):
-                    self.owner.camera_device = camera
-                    self.owner.create_camera_preview_session()
-
-                def onDisconnected(self, camera):
-                    camera.close()
-                    self.owner.camera_device = None
-
-                def onError(self, camera, error):
-                    camera.close()
-                    self.owner.camera_device = None
 
             camera_manager.openCamera(camera_id, StateCallback(self), None)
         except Exception as e:
@@ -368,6 +351,23 @@ class ScannerScreen(Screen):
         content = Label(text=message)
         popup = Popup(title=title, content=content, size_hint=(0.8, 0.4))
         popup.open()
+
+class StateCallback(autoclass('android.hardware.camera2.CameraDevice$StateCallback')):
+    def __init__(self, owner):
+        super().__init__()
+        self.owner = owner
+
+    def onOpened(self, camera):
+        self.owner.camera_device = camera
+        self.owner.create_camera_preview_session()
+
+    def onDisconnected(self, camera):
+        camera.close()
+        self.owner.camera_device = None
+
+    def onError(self, camera, error):
+        camera.close()
+        self.owner.camera_device = None
 
 class BarcodeScannerApp(App):
     def build(self):
