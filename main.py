@@ -189,6 +189,7 @@ class ScannerScreen(Screen):
             ImageReader = autoclass('android.media.ImageReader')
             Handler = autoclass('android.os.Handler')
             Looper = autoclass('android.os.Looper')
+            CameraDevice = autoclass('android.hardware.camera2.CameraDevice')
 
             activity = PythonActivity.mActivity
             camera_manager = activity.getSystemService(Context.CAMERA_SERVICE)
@@ -197,7 +198,24 @@ class ScannerScreen(Screen):
             self.image_reader = ImageReader.newInstance(640, 480, ImageFormat.YUV_420_888, 2)
             self.image_reader.setOnImageAvailableListener(self.on_image_available, Handler(Looper.getMainLooper()))
 
-            camera_manager.openCamera(camera_id, self.create_camera_state_callback(), None)
+            class StateCallback(CameraDevice.StateCallback):
+                def __init__(self, owner):
+                    super().__init__()
+                    self.owner = owner
+
+                def onOpened(self, camera):
+                    self.owner.camera_device = camera
+                    self.owner.create_camera_preview_session()
+
+                def onDisconnected(self, camera):
+                    camera.close()
+                    self.owner.camera_device = None
+
+                def onError(self, camera, error):
+                    camera.close()
+                    self.owner.camera_device = None
+
+            camera_manager.openCamera(camera_id, StateCallback(self), None)
         except Exception as e:
             self.show_message("Error", f"Failed to initialize camera: {str(e)}")
             self.go_back(None)
@@ -242,27 +260,6 @@ class ScannerScreen(Screen):
         except Exception as e:
             self.show_message("Error", f"Failed to process image: {str(e)}")
 
-    def create_camera_state_callback(self):
-        CameraDevice = autoclass('android.hardware.camera2.CameraDevice')
-
-        class StateCallback(CameraDevice.StateCallback):
-            def __init__(self, owner):
-                super().__init__()
-                self.owner = owner
-
-            def onOpened(self, camera):
-                self.owner.camera_device = camera
-                self.owner.create_camera_preview_session()
-
-            def onDisconnected(self, camera):
-                camera.close()
-                self.owner.camera_device = None
-
-            def onError(self, camera, error):
-                camera.close()
-                self.owner.camera_device = None
-
-        return StateCallback(self)
 
     def create_camera_preview_session(self):
         try:
