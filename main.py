@@ -352,7 +352,9 @@ class ScannerScreen(Screen):
         popup = Popup(title=title, content=content, size_hint=(0.8, 0.4))
         popup.open()
 
-class StateCallback(autoclass('android.hardware.camera2.CameraDevice$StateCallback')):
+class StateCallback(autoclass('java.lang.Object')):
+    __javainterfaces__ = ['android/hardware/camera2/CameraDevice$StateCallback']
+
     def __init__(self, owner):
         super().__init__()
         self.owner = owner
