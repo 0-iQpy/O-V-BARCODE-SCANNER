@@ -352,21 +352,27 @@ class ScannerScreen(Screen):
         popup = Popup(title=title, content=content, size_hint=(0.8, 0.4))
         popup.open()
 
-class StateCallback(autoclass('java.lang.Object')):
+from python_for_android.python_java_class import PythonJavaClass, java_method
+
+class StateCallback(PythonJavaClass):
     __javainterfaces__ = ['android/hardware/camera2/CameraDevice$StateCallback']
+    __javacontext__ = 'app'
 
     def __init__(self, owner):
         super().__init__()
         self.owner = owner
 
+    @java_method('(Landroid/hardware/camera2/CameraDevice;)V')
     def onOpened(self, camera):
         self.owner.camera_device = camera
         self.owner.create_camera_preview_session()
 
+    @java_method('(Landroid/hardware/camera2/CameraDevice;)V')
     def onDisconnected(self, camera):
         camera.close()
         self.owner.camera_device = None
 
+    @java_method('(Landroid/hardware/camera2/CameraDevice;I)V')
     def onError(self, camera, error):
         camera.close()
         self.owner.camera_device = None
