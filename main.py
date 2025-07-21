@@ -64,6 +64,7 @@ class MainScreen(Screen):
         if platform == "android":
             if not self.check_permissions():
                 self.show_message("Permission Denied", "Storage permission is required to load files. Please grant permission in settings.")
+                self.open_settings()
                 return
 
         content = BoxLayout(orientation='vertical')
@@ -116,6 +117,19 @@ class MainScreen(Screen):
         content = Label(text=message)
         popup = Popup(title=title, content=content, size_hint=(0.8, 0.4))
         popup.open()
+
+    def open_settings(self, *args):
+        if platform == "android":
+            from jnius import autoclass
+            PythonActivity = autoclass('org.kivy.android.PythonActivity')
+            Intent = autoclass('android.content.Intent')
+            Settings = autoclass('android.provider.Settings')
+            Uri = autoclass('android.net.Uri')
+
+            app_package_name = PythonActivity.mActivity.getPackageName()
+            intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                            Uri.parse("package:" + app_package_name))
+            PythonActivity.mActivity.startActivity(intent)
 
     def exit_app(self, instance):
         App.get_running_app().stop()
